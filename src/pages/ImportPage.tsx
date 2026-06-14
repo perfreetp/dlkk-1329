@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Upload,
   FileJson,
@@ -9,7 +10,9 @@ import {
   Sparkles,
   ChevronRight,
 } from "lucide-react";
-import { subjects, chapters, knowledgePoints, questions } from "@/data/mock";
+import { subjects, chapters } from "@/data/mock";
+import { useStudyStore } from "@/store";
+import type { ErrorReason } from "@/types";
 
 interface PreviewItem {
   id: string;
@@ -21,18 +24,26 @@ interface PreviewItem {
   correctAnswer: string;
 }
 
-const sampleData: PreviewItem[] = questions.slice(0, 6).map((q, i) => ({
-  id: q.id,
-  question: q.content,
-  knowledgePoint:
-    knowledgePoints.find((k) => k.id === q.knowledgePointId)?.name || "",
-  subject: subjects[0].name,
-  isCorrect: i % 3 !== 0,
-  userAnswer: i % 3 === 0 ? "B" : q.correctAnswer,
-  correctAnswer: q.correctAnswer,
-}));
+interface ImportQuestionRaw {
+  questionId?: string;
+  questionContent: string;
+  questionType?: string;
+  options?: string[];
+  correctAnswer: string;
+  analysis?: string;
+  knowledgePointId?: string;
+  knowledgePointName?: string;
+  userAnswer: string;
+  isCorrect: boolean;
+  errorReason?: string;
+}
 
 export default function ImportPage() {
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importQuestions = useStudyStore((s) => s.importQuestions);
+  const setSelectedBatchId = useStudyStore((s) => s.setSelectedBatchId);
+
   const [isDragging, setIsDragging] = useState(false);
   const [step, setStep] = useState(1);
   const [fileName, setFileName] = useState("");
@@ -40,7 +51,143 @@ export default function ImportPage() {
   const [progress, setProgress] = useState(0);
   const [selectedSubject, setSelectedSubject] = useState(subjects[0].id);
   const [selectedChapter, setSelectedChapter] = useState(chapters[1].id);
-  const [preview] = useState<PreviewItem[]>(sampleData);
+  const [preview, setPreview] = useState<PreviewItem[]>([]);
+  const [importData, setImportData] = useState<ImportQuestionRaw[]>([]);
+  const [importedBatchId, setImportedBatchId] = useState<string>("");
+  const [importStats, setImportStats] = useState({ total: 0, correct: 0, wrong: 0 });
+
+  const parseJSON = (text: string): ImportQuestionRaw[] => {
+    try {
+      const data = JSON.parse(text);
+      if (Array.isArray(data)) {
+        return data.map((item, idx) => ({
+          questionId: item.questionId || item.id,
+          questionContent: item.questionContent || item.content || item.question || "",
+          questionType: item.questionType || item.type,
+          options: item.options,
+          correctAnswer: item.correctAnswer || item.answer,
+          analysis: item.analysis || item.explanation,
+          knowledgePointId: item.knowledgePointId || item.kpId,
+          knowledgePointName: item.knowledgePointName || item.knowledgePoint,
+          userAnswer: item.userAnswer || item.yourAnswer,
+          isCorrect: item.isCorrect !== undefined ? item.isCorrect : item.correct,
+          errorReason: item.errorReason,
+        }));
+      }
+      if (data.questions && Array.isArray(data.questions)) {
+        return data.questions.map((item: any, idx: number) => ({
+          questionId: item.questionId || item.id,
+          questionContent: item.questionContent || item.content || item.question || "",
+          questionType: item.questionType || item.type,
+          options: item.options,
+          correctAnswer: item.correctAnswer || item.answer,
+          analysis: item.analysis || item.explanation,
+          knowledgePointId: item.knowledgePointId || item.kpId,
+          knowledgePointName: item.knowledgePointName || item.knowledgePoint,
+          userAnswer: item.userAnswer || item.yourAnswer,
+          isCorrect: item.isCorrect !== undefined ? item.isCorrect : item.correct,
+          errorReason: item.errorReason,
+        }));
+      }
+      return [];
+    } catch (e) {
+      console.error("JSON parse error:", e);
+      return [];
+    }
+  };
+
+  const parseCSV = (text: string): ImportQuestionRaw[] => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const result: ImportQuestionRaw[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      const obj: any = {};
+      headers.forEach((h, idx) => {
+        obj[h] = values[idx] || "";
+      });
+
+      result.push({
+        questionId: obj.questionid || obj.id,
+        questionContent: obj.questioncontent || obj.content || obj.question || "",
+        questionType: obj.questiontype || obj.type,
+        options: obj.options ? obj.options.split("|") : undefined,
+        correctAnswer: obj.correctanswer || obj.answer,
+        analysis: obj.analysis || obj.explanation,
+        knowledgePointId: obj.knowledgepointid || obj.kpid,
+        knowledgePointName: obj.knowledgepointname || obj.knowledgepoint,
+        userAnswer: obj.useranswer || obj.youranswer,
+        isCorrect: obj.iscorrect === "true" || obj.iscorrect === "1" || obj.correct === "true",
+        errorReason: obj.errorreason,
+      });
+    }
+
+    return result;
+  };
+
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const processFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      let data: ImportQuestionRaw[] = [];
+
+      if (file.name.endsWith(".json")) {
+        data = parseJSON(text);
+      } else if (file.name.endsWith(".csv")) {
+        data = parseCSV(text);
+      }
+
+      if (data.length === 0) {
+        alert("无法解析文件，请检查文件格式");
+        return;
+      }
+
+      setImportData(data);
+      setFileName(file.name);
+
+      const previewItems: PreviewItem[] = data.slice(0, 10).map((item, i) => ({
+        id: item.questionId || `q-${i}`,
+        question: item.questionContent,
+        knowledgePoint: item.knowledgePointName || "待归类",
+        subject: subjects.find((s) => s.id === selectedSubject)?.name || "",
+        isCorrect: !!item.isCorrect,
+        userAnswer: item.userAnswer || "-",
+        correctAnswer: item.correctAnswer || "-",
+      }));
+
+      setPreview(previewItems);
+      setImportStats({
+        total: data.length,
+        correct: data.filter((d) => d.isCorrect).length,
+        wrong: data.filter((d) => !d.isCorrect).length,
+      });
+      setStep(2);
+    };
+    reader.readAsText(file);
+  }, [selectedSubject]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -56,24 +203,50 @@ export default function ImportPage() {
     setIsDragging(false);
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      setFileName(files[0].name);
-      setStep(2);
+      const file = files[0];
+      if (file.name.endsWith(".json") || file.name.endsWith(".csv")) {
+        processFile(file);
+      } else {
+        alert("请上传 JSON 或 CSV 格式的文件");
+      }
     }
-  }, []);
+  }, [processFile]);
 
-  const handleFileSelect = () => {
-    setFileName("练习数据_20260614.json");
-    setStep(2);
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const handleClickSelect = () => {
+    fileInputRef.current?.click();
   };
 
   const handleImport = () => {
     setImporting(true);
     setProgress(0);
+
     const interval = setInterval(() => {
       setProgress((p) => {
         if (p >= 100) {
           clearInterval(interval);
           setImporting(false);
+
+          const subject = subjects.find((s) => s.id === selectedSubject);
+          const chapter = chapters.find((c) => c.id === selectedChapter);
+
+          const batchId = importQuestions(
+            importData.map((d) => ({
+              ...d,
+              errorReason: (d.errorReason as ErrorReason) || undefined,
+            })),
+            fileName,
+            selectedSubject,
+            selectedChapter
+          );
+
+          setImportedBatchId(batchId);
           setStep(3);
           return 100;
         }
@@ -82,8 +255,13 @@ export default function ImportPage() {
     }, 200);
   };
 
-  const successCount = preview.filter((p) => p.isCorrect).length;
-  const failCount = preview.filter((p) => !p.isCorrect).length;
+  const handleViewMistakes = () => {
+    setSelectedBatchId(importedBatchId);
+    navigate("/mistakes");
+  };
+
+  const successCount = importStats.correct;
+  const failCount = importStats.wrong;
 
   if (step === 3) {
     return (
@@ -96,12 +274,12 @@ export default function ImportPage() {
             导入成功
           </h3>
           <p className="text-gray-500 mb-8">
-            已成功导入 {preview.length} 道题目，其中 {failCount} 道错题已加入错题本
+            已成功导入 {importStats.total} 道题目，其中 {failCount} 道错题已加入错题本
           </p>
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="p-4 rounded-xl bg-gray-50">
               <div className="text-2xl font-bold text-gray-800">
-                {preview.length}
+                {importStats.total}
               </div>
               <div className="text-xs text-gray-500">总题数</div>
             </div>
@@ -117,10 +295,16 @@ export default function ImportPage() {
             </div>
           </div>
           <div className="flex gap-3 justify-center">
-            <button className="btn-secondary" onClick={() => setStep(1)}>
+            <button className="btn-secondary" onClick={() => {
+              setStep(1);
+              setFileName("");
+              setImportData([]);
+              setPreview([]);
+              if (fileInputRef.current) fileInputRef.current.value = "";
+            }}>
               继续导入
             </button>
-            <button className="btn-primary">查看错题本</button>
+            <button className="btn-primary" onClick={handleViewMistakes}>查看错题本</button>
           </div>
         </div>
       </div>
@@ -174,7 +358,15 @@ export default function ImportPage() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          onClick={handleClickSelect}
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.csv"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
           <div className="text-center max-w-md mx-auto">
             <div
               className={`w-20 h-20 rounded-2xl mx-auto mb-6 flex items-center justify-center transition-all duration-300 ${
@@ -203,7 +395,7 @@ export default function ImportPage() {
                 <span className="text-sm text-gray-600">.csv</span>
               </div>
             </div>
-            <button className="btn-primary" onClick={handleFileSelect}>
+            <button className="btn-primary" onClick={handleClickSelect}>
               选择文件
             </button>
           </div>
@@ -221,7 +413,7 @@ export default function ImportPage() {
               <div className="flex gap-2 mt-2">
                 <FileJson className="w-4 h-4 text-blue-500" />
                 <span className="text-xs text-gray-400">
-                  {preview.length} 条记录
+                  {importStats.total} 条记录
                 </span>
               </div>
             </div>
@@ -232,7 +424,13 @@ export default function ImportPage() {
               <select
                 className="input-base"
                 value={selectedSubject}
-                onChange={(e) => setSelectedSubject(e.target.value)}
+                onChange={(e) => {
+                  setSelectedSubject(e.target.value);
+                  const firstChapter = chapters.find((c) => c.subjectId === e.target.value);
+                  if (firstChapter) {
+                    setSelectedChapter(firstChapter.id);
+                  }
+                }}
               >
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -342,6 +540,11 @@ export default function ImportPage() {
                 </tbody>
               </table>
             </div>
+            {importStats.total > preview.length && (
+              <div className="p-3 text-center text-sm text-gray-400 border-t border-gray-100">
+                共 {importStats.total} 条记录，仅显示前 {preview.length} 条
+              </div>
+            )}
           </div>
 
           {importing ? (
@@ -367,6 +570,9 @@ export default function ImportPage() {
                 onClick={() => {
                   setStep(1);
                   setFileName("");
+                  setImportData([]);
+                  setPreview([]);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
                 }}
               >
                 重新选择

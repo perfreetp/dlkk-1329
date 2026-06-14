@@ -35,6 +35,16 @@ export interface Question {
 
 export type ErrorReason = "concept" | "memory" | "careless" | "method";
 
+export interface ImportBatch {
+  id: string;
+  name: string;
+  createdAt: string;
+  totalCount: number;
+  mistakeCount: number;
+  subjectId: string;
+  chapterId: string;
+}
+
 export interface Mistake {
   id: string;
   questionId: string;
@@ -50,6 +60,7 @@ export interface Mistake {
   screenshot?: string;
   createdAt: string;
   reviewedCount: number;
+  importBatchId?: string;
 }
 
 export type TaskStatus = "pending" | "completed" | "delayed" | "skipped";

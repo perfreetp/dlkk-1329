@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Calendar,
   CheckCircle2,
@@ -27,8 +27,12 @@ const priorityColors: Record<number, { bg: string; text: string; label: string }
 };
 
 export default function PlanPage() {
-  const { reviewTasks, updateTaskStatus, delayTask } = useStudyStore();
+  const { reviewTasks, updateTaskStatus, delayTask, generateDailyTasks } = useStudyStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  useEffect(() => {
+    generateDailyTasks();
+  }, [generateDailyTasks]);
 
   const todayTasks = useMemo(
     () => reviewTasks.filter((t) => t.date === today),

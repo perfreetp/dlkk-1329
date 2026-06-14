@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Star,
@@ -16,6 +16,8 @@ import {
   Filter,
   BookMarked,
   BookX,
+  X,
+  Upload,
 } from "lucide-react";
 import { useStudyStore, getErrorReasonLabel, getQuestionTypeLabel } from "@/store";
 import { subjects } from "@/data/mock";
@@ -30,16 +32,20 @@ const errorReasonColors: Record<string, string> = {
 export default function MistakesPage() {
   const {
     mistakes,
+    importBatches,
     getFilteredMistakes,
     toggleMastered,
     toggleImportant,
     deleteMistake,
     updateNote,
+    updateScreenshot,
     selectedSubjectId,
+    selectedBatchId,
     searchQuery,
     masteryFilter,
     importantFilter,
     setSelectedSubjectId,
+    setSelectedBatchId,
     setSearchQuery,
     setMasteryFilter,
     setImportantFilter,
@@ -48,8 +54,19 @@ export default function MistakesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingMistakeId, setUploadingMistakeId] = useState<string | null>(null);
 
   const filtered = getFilteredMistakes();
+
+  useEffect(() => {
+    if (selectedBatchId) {
+      const batch = importBatches.find((b) => b.id === selectedBatchId);
+      if (batch) {
+        setSelectedSubjectId(batch.subjectId);
+      }
+    }
+  }, []);
 
   const startEditNote = (id: string, currentNote: string) => {
     setEditingNoteId(id);
@@ -62,13 +79,53 @@ export default function MistakesPage() {
     setNoteText("");
   };
 
+  const handleUploadClick = (mistakeId: string) => {
+    setUploadingMistakeId(mistakeId);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadingMistakeId) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      updateScreenshot(uploadingMistakeId, base64);
+      setUploadingMistakeId(null);
+    };
+    reader.readAsDataURL(file);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeleteScreenshot = (id: string) => {
+    updateScreenshot(id, "");
+  };
+
   const totalCount = mistakes.length;
   const masteredCount = mistakes.filter((m) => m.mastered).length;
   const importantCount = mistakes.filter((m) => m.important).length;
   const unmasteredCount = totalCount - masteredCount;
 
+  const currentBatch = importBatches.find((b) => b.id === selectedBatchId);
+
+  const clearBatchFilter = () => {
+    setSelectedBatchId(null);
+  };
+
   return (
     <div className="space-y-6">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       <div className="grid grid-cols-4 gap-4">
         <div className="card-base p-5">
           <div className="flex items-center justify-between">
@@ -124,6 +181,32 @@ export default function MistakesPage() {
         </div>
       </div>
 
+      {currentBatch && (
+        <div className="card-base p-4 bg-primary-50/50 border-primary-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center">
+              <Upload className="w-5 h-5 text-primary-600" />
+            </div>
+            <div>
+              <div className="text-sm text-gray-500">当前筛选：导入批次</div>
+              <div className="font-medium text-gray-800">
+                {currentBatch.name}
+                <span className="text-xs text-gray-400 ml-2">
+                  {currentBatch.createdAt} · {currentBatch.mistakeCount} 道错题
+                </span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={clearBatchFilter}
+            className="btn-ghost text-sm flex items-center gap-1"
+          >
+            <X className="w-4 h-4" />
+            清除筛选
+          </button>
+        </div>
+      )}
+
       <div className="card-base p-5">
         <div className="flex flex-wrap items-center gap-4">
           <div className="relative flex-1 min-w-[200px]">
@@ -154,6 +237,26 @@ export default function MistakesPage() {
               ))}
             </select>
           </div>
+
+          {importBatches.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <select
+                className="input-base !w-48"
+                value={selectedBatchId || ""}
+                onChange={(e) =>
+                  setSelectedBatchId(e.target.value || null)
+                }
+              >
+                <option value="">全部批次</option>
+                {importBatches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.mistakeCount}题)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex rounded-xl overflow-hidden border border-gray-200">
             <button
@@ -249,6 +352,12 @@ export default function MistakesPage() {
                       <span className="tag bg-gray-50 text-gray-500">
                         {getQuestionTypeLabel(mistake.question.type)}
                       </span>
+                      {mistake.screenshot && (
+                        <span className="tag bg-green-50 text-green-600 flex items-center gap-1">
+                          <Image className="w-3 h-3" />
+                          有截图
+                        </span>
+                      )}
                       <span className="text-xs text-gray-400 ml-auto">
                         {mistake.createdAt}
                       </span>
@@ -365,15 +474,33 @@ export default function MistakesPage() {
                         <h5 className="font-semibold text-gray-800 text-sm">
                           题目解析
                         </h5>
-                        <button className="text-primary-600 hover:text-primary-700 text-sm flex items-center gap-1">
+                        <button
+                          onClick={() => handleUploadClick(mistake.id)}
+                          className="text-primary-600 hover:text-primary-700 text-sm flex items-center gap-1"
+                        >
                           <Image className="w-3.5 h-3.5" />
-                          上传截图
+                          {mistake.screenshot ? "更换截图" : "上传截图"}
                         </button>
                       </div>
-                      <div className="bg-white p-3 rounded-xl border border-gray-100">
+                      <div className="bg-white p-3 rounded-xl border border-gray-100 space-y-3">
                         <p className="text-sm text-gray-600">
                           {mistake.question.analysis || "暂无官方解析"}
                         </p>
+                        {mistake.screenshot && (
+                          <div className="relative group">
+                            <img
+                              src={mistake.screenshot}
+                              alt="解析截图"
+                              className="w-full rounded-lg border border-gray-200"
+                            />
+                            <button
+                              onClick={() => handleDeleteScreenshot(mistake.id)}
+                              className="absolute top-2 right-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 mt-3 text-xs text-gray-400">
                         <span>已复习 {mistake.reviewedCount} 次</span>
@@ -399,7 +526,11 @@ export default function MistakesPage() {
             <h4 className="text-lg font-medium text-gray-500 mb-1">
               暂无匹配的错题
             </h4>
-            <p className="text-sm text-gray-400">尝试调整筛选条件或导入新的练习</p>
+            <p className="text-sm text-gray-400">
+              {selectedBatchId
+                ? "该批次暂无错题"
+                : "尝试调整筛选条件或导入新的练习"}
+            </p>
           </div>
         )}
       </div>

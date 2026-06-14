@@ -1,0 +1,65 @@
+[
+  {
+    "questionId": "q-import-1",
+    "questionContent": "企业存货期末计量采用的方法是？",
+    "questionType": "single",
+    "options": ["历史成本法", "重置成本法", "成本与可变现净值孰低法", "公允价值法"],
+    "correctAnswer": "C",
+    "analysis": "资产负债表日，存货应当按照成本与可变现净值孰低计量。",
+    "knowledgePointId": "kp-3",
+    "knowledgePointName": "存货期末计量",
+    "userAnswer": "A",
+    "isCorrect": false,
+    "errorReason": "memory"
+  },
+  {
+    "questionId": "q-import-2",
+    "questionContent": "下列各项中，属于固定资产的有？",
+    "questionType": "multiple",
+    "options": ["生产用机器设备", "办公用房屋", "用于出租的建筑物", "土地使用权"],
+    "correctAnswer": "AB",
+    "analysis": "固定资产是指同时具有下列特征的有形资产：(1)为生产商品、提供劳务、出租或经营管理而持有的；(2)使用寿命超过一个会计年度。用于出租的建筑物属于投资性房地产，土地使用权属于无形资产。",
+    "knowledgePointId": "kp-4",
+    "knowledgePointName": "固定资产初始计量",
+    "userAnswer": "ABC",
+    "isCorrect": false,
+    "errorReason": "concept"
+  },
+  {
+    "questionId": "q-import-3",
+    "questionContent": "收入确认的五步法模型中，第一步是识别合同。",
+    "questionType": "judge",
+    "correctAnswer": "A",
+    "analysis": "收入确认五步法：1.识别与客户订立的合同；2.识别合同中的单项履约义务；3.确定交易价格；4.将交易价格分摊至各单项履约义务；5.履行各单项履约义务时确认收入。",
+    "knowledgePointId": "kp-7",
+    "knowledgePointName": "收入的确认",
+    "userAnswer": "A",
+    "isCorrect": true
+  },
+  {
+    "questionId": "q-import-4",
+    "questionContent": "下列各项中，会产生应纳税暂时性差异的有？",
+    "questionType": "multiple",
+    "options": ["资产账面价值大于计税基础", "资产账面价值小于计税基础", "负债账面价值大于计税基础", "负债账面价值小于计税基础"],
+    "correctAnswer": "AD",
+    "analysis": "应纳税暂时性差异：资产账面价值>计税基础，负债账面价值<计税基础；可抵扣暂时性差异：资产账面价值<计税基础，负债账面价值>计税基础。",
+    "knowledgePointId": "kp-11",
+    "knowledgePointName": "暂时性差异",
+    "userAnswer": "AC",
+    "isCorrect": false,
+    "errorReason": "concept"
+  },
+  {
+    "questionId": "q-import-5",
+    "questionContent": "下列关于发出存货计价方法的表述中，正确的是？",
+    "questionType": "single",
+    "options": ["先进先出法不适用于价格波动大的情况", "移动加权平均法每次进货都要重新计算单位成本", "月末一次加权平均法有利于存货成本的日常管理", "个别计价法适用于一般存货"],
+    "correctAnswer": "B",
+    "analysis": "移动加权平均法每次进货时都要重新计算加权平均单位成本，以此为基础计算下次进货前发出存货的成本。",
+    "knowledgePointId": "kp-2",
+    "knowledgePointName": "发出存货计价方法",
+    "userAnswer": "C",
+    "isCorrect": false,
+    "errorReason": "method"
+  }
+]
