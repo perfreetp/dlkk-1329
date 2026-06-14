@@ -55,6 +55,8 @@ export default function ReportPage() {
     studyRecords,
     importBatches,
     getKnowledgePointMastery,
+    getBatchStats,
+    enterBatchContext,
   } = useStudyStore();
 
   const correctRateData = useMemo(() => {
@@ -618,6 +620,7 @@ export default function ReportPage() {
                             className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-gray-400 hover:text-primary-600 transition-colors ml-1"
                             onClick={(e) => {
                               e.stopPropagation();
+                              enterBatchContext(b.id);
                               navigate(`/batch/${b.id}`);
                             }}
                             title="查看批次详情"
@@ -691,6 +694,7 @@ export default function ReportPage() {
                                     className="p-2.5 rounded-lg bg-white border border-gray-100 hover:border-primary-200 hover:shadow-sm transition-all cursor-pointer"
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      enterBatchContext(b.id);
                                       navigate(`/graph/${kp.id}`);
                                     }}
                                   >
@@ -760,6 +764,7 @@ export default function ReportPage() {
                             className="btn-secondary text-xs py-1.5 px-3 flex-1"
                             onClick={(e) => {
                               e.stopPropagation();
+                              enterBatchContext(b.id);
                               navigate(`/batch/${b.id}`);
                             }}
                           >
@@ -769,6 +774,7 @@ export default function ReportPage() {
                             className="btn-primary text-xs py-1.5 px-3 flex-1"
                             onClick={(e) => {
                               e.stopPropagation();
+                              enterBatchContext(b.id);
                               navigate(`/plan`);
                             }}
                           >

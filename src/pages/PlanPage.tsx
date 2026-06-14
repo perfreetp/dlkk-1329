@@ -18,6 +18,9 @@ import {
   Download,
   AlertTriangle,
   Sparkles,
+  Upload,
+  X,
+  History,
 } from "lucide-react";
 import { useStudyStore, getErrorReasonLabel, getQuestionTypeLabel } from "@/store";
 import type { ReviewTask, TaskStatus } from "@/types";
@@ -55,28 +58,44 @@ export default function PlanPage() {
     generateDailyTasks,
     rescheduleTodayTasks,
     getTaskSourceLabel,
+    contextBatchId,
+    importBatches,
+    exitBatchContext,
+    getMistakesByBatch,
   } = useStudyStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [activeTab, setActiveTab] = useState<"today" | "tomorrow" | "week">("today");
+
+  const contextBatch = importBatches.find((b) => b.id === contextBatchId);
+  const batchMistakeCount = contextBatchId ? getMistakesByBatch(contextBatchId).length : 0;
 
   useEffect(() => {
     generateDailyTasks();
   }, [generateDailyTasks]);
 
+  const filterTasksByBatch = (tasks: ReviewTask[]) => {
+    if (!contextBatchId) return tasks;
+    return tasks.filter((t) => t.sourceBatchId === contextBatchId);
+  };
+
   const todayTasks = useMemo(
     () =>
-      reviewTasks
-        .filter((t) => t.date === today)
-        .sort((a, b) => b.priority - a.priority),
-    [reviewTasks]
+      filterTasksByBatch(
+        reviewTasks
+          .filter((t) => t.date === today)
+          .sort((a, b) => b.priority - a.priority)
+      ),
+    [reviewTasks, contextBatchId]
   );
 
   const tomorrowTasks = useMemo(
     () =>
-      reviewTasks
-        .filter((t) => t.date === tomorrow)
-        .sort((a, b) => b.priority - a.priority),
-    [reviewTasks]
+      filterTasksByBatch(
+        reviewTasks
+          .filter((t) => t.date === tomorrow)
+          .sort((a, b) => b.priority - a.priority)
+      ),
+    [reviewTasks, contextBatchId]
   );
 
   const weekTasks = useMemo(() => {
@@ -84,11 +103,12 @@ export default function PlanPage() {
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
-    return reviewTasks.filter((t) => {
+    const tasks = reviewTasks.filter((t) => {
       const d = new Date(t.date);
       return d >= weekStart && d <= weekEnd;
     });
-  }, [reviewTasks]);
+    return filterTasksByBatch(tasks);
+  }, [reviewTasks, contextBatchId]);
 
   const weekTaskByDay = useMemo(() => {
     const groups: Record<string, ReviewTask[]> = {};
@@ -168,7 +188,9 @@ export default function PlanPage() {
     for (let i = 1; i <= lastDay.getDate(); i++) {
       const d = new Date(year, month, i);
       const dateStr = d.toISOString().split("T")[0];
-      const dayTasks = reviewTasks.filter((t) => t.date === dateStr);
+      const dayTasks = filterTasksByBatch(
+        reviewTasks.filter((t) => t.date === dateStr)
+      );
       days.push({
         date: dateStr,
         day: i,
@@ -182,7 +204,7 @@ export default function PlanPage() {
     }
 
     return days;
-  }, [currentMonth, reviewTasks]);
+  }, [currentMonth, reviewTasks, contextBatchId]);
 
   const prevMonth = () => {
     setCurrentMonth(
@@ -335,6 +357,29 @@ export default function PlanPage() {
 
   return (
     <div className="space-y-6">
+      {contextBatch && (
+        <div className="card-base p-4 bg-primary-50/50 border-primary-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center">
+              <Upload className="w-5 h-5 text-primary-600" />
+            </div>
+            <div>
+              <div className="text-sm text-gray-500">当前批次视图：{contextBatch.name}</div>
+              <div className="text-sm text-gray-600">
+                仅显示与这批错题相关的复习任务 · 共 {batchMistakeCount} 道错题
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={exitBatchContext}
+            className="btn-ghost text-sm flex items-center gap-1"
+          >
+            <X className="w-4 h-4" />
+            退出批次视图
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4">
         <div className="card-base p-5">
           <div className="flex items-center gap-3">

@@ -42,7 +42,7 @@ const TYPE_COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b"];
 export default function BatchReviewPage() {
   const { batchId } = useParams<{ batchId: string }>();
   const navigate = useNavigate();
-  const { getBatchStats, toggleMastered, toggleImportant, deleteMistake, updateNote, updateScreenshot } = useStudyStore();
+  const { getBatchStats, toggleMastered, toggleImportant, deleteMistake, updateNote, updateScreenshot, enterBatchContext } = useStudyStore();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -161,7 +161,7 @@ export default function BatchReviewPage() {
           <button
             className="btn-ghost"
             onClick={() => {
-              useStudyStore.getState().setSelectedBatchId(batchId);
+              enterBatchContext(batchId);
               navigate("/mistakes");
             }}
           >
@@ -169,7 +169,10 @@ export default function BatchReviewPage() {
           </button>
           <button
             className="btn-primary"
-            onClick={() => navigate("/plan")}
+            onClick={() => {
+              enterBatchContext(batchId);
+              navigate("/plan");
+            }}
           >
             去安排复习
           </button>
@@ -378,7 +381,10 @@ export default function BatchReviewPage() {
                   <div
                     key={kp.id}
                     className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/graph/${kp.id}`)}
+                    onClick={() => {
+                      enterBatchContext(batchId);
+                      navigate(`/graph/${kp.id}`);
+                    }}
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-sm font-medium text-gray-800 truncate pr-2">

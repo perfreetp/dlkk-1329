@@ -32,6 +32,7 @@ interface StudyState {
   importBatches: ImportBatch[];
   selectedSubjectId: string | null;
   selectedBatchId: string | null;
+  contextBatchId: string | null;
   searchQuery: string;
   masteryFilter: "all" | "mastered" | "unmastered";
   importantFilter: boolean;
@@ -85,6 +86,10 @@ interface StudyActions {
   getMistakesByBatch: (batchId: string) => Mistake[];
   setSelectedSubjectId: (id: string | null) => void;
   setSelectedBatchId: (id: string | null) => void;
+  enterBatchContext: (batchId: string) => void;
+  exitBatchContext: () => void;
+  applyBatchContextFilters: () => void;
+  clearAllFilters: () => void;
   setSearchQuery: (query: string) => void;
   setMasteryFilter: (filter: "all" | "mastered" | "unmastered") => void;
   setImportantFilter: (filter: boolean) => void;
@@ -167,6 +172,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
       importBatches: [],
       selectedSubjectId: null,
       selectedBatchId: null,
+      contextBatchId: null,
       searchQuery: "",
       masteryFilter: "all",
       importantFilter: false,
@@ -278,6 +284,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
           importBatches: [batch, ...state.importBatches],
           selectedBatchId: batchId,
           selectedSubjectId: subjectId,
+          contextBatchId: batchId,
         }));
 
         if (newMistakes.length > 0) {
@@ -285,8 +292,12 @@ export const useStudyStore = create<StudyState & StudyActions>()(
           const existingToday = currentState.reviewTasks.filter(
             (t) => t.date === today
           );
-          const existingTodayKpMap = new Map<string, ReviewTask>();
-          existingToday.forEach((t) => existingTodayKpMap.set(t.knowledgePointId, t));
+          const existingKpIdToTask = new Map<string, ReviewTask>();
+          existingToday.forEach((t) => {
+            if (!existingKpIdToTask.has(t.knowledgePointId)) {
+              existingKpIdToTask.set(t.knowledgePointId, t);
+            }
+          });
 
           const kpMistakeMap = new Map<string, Mistake[]>();
           newMistakes.forEach((m) => {
@@ -296,11 +307,11 @@ export const useStudyStore = create<StudyState & StudyActions>()(
             kpMistakeMap.get(m.knowledgePoint.id)!.push(m);
           });
 
-          const updatedTasks: ReviewTask[] = [];
-          const newTasks: ReviewTask[] = [];
+          const upsertedTasks: ReviewTask[] = [];
+          const upsertedKpIds = new Set<string>();
 
           kpMistakeMap.forEach((mistakes, kpId) => {
-            const existingTask = existingTodayKpMap.get(kpId);
+            const existingTask = existingKpIdToTask.get(kpId);
             const mastery = get().getKnowledgePointMastery(kpId);
             const weakLevel = mastery.level;
             const allKpMistakes = get().mistakes.filter(
@@ -323,7 +334,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
             const priority = Math.min(3, Math.max(1, Math.round(basePriority / 4)));
 
             if (existingTask) {
-              updatedTasks.push({
+              upsertedTasks.push({
                 ...existingTask,
                 priority,
                 priorityLabel:
@@ -342,7 +353,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
                   existingTask.status === "completed" ? "completed" : "pending",
               });
             } else {
-              newTasks.push({
+              upsertedTasks.push({
                 id: `t-${generateId()}`,
                 knowledgePointId: kpId,
                 knowledgePointName: mistakes[0].knowledgePoint.name,
@@ -366,21 +377,31 @@ export const useStudyStore = create<StudyState & StudyActions>()(
                 daysUntilExam,
               });
             }
+            upsertedKpIds.add(kpId);
           });
 
-          if (updatedTasks.length > 0 || newTasks.length > 0) {
+          if (upsertedTasks.length > 0) {
             set((state) => {
-              const updatedTaskIds = new Set(updatedTasks.map((t) => t.id));
               const restTasks = state.reviewTasks.filter(
-                (t) => t.date !== today || !updatedTaskIds.has(t.id)
+                (t) => t.date !== today || !upsertedKpIds.has(t.knowledgePointId)
               );
-              const todayRemaining = existingToday.filter(
-                (t) => !updatedTaskIds.has(t.id)
+              const todayOtherTasks = existingToday.filter(
+                (t) => !upsertedKpIds.has(t.knowledgePointId)
               );
-              const mergedToday = [...updatedTasks, ...newTasks, ...todayRemaining];
+              const mergedToday = [...upsertedTasks, ...todayOtherTasks];
               mergedToday.sort((a, b) => b.priority - a.priority);
+
+              const uniqueToday: ReviewTask[] = [];
+              const seenKpIds = new Set<string>();
+              for (const t of mergedToday) {
+                if (!seenKpIds.has(t.knowledgePointId)) {
+                  seenKpIds.add(t.knowledgePointId);
+                  uniqueToday.push(t);
+                }
+              }
+
               return {
-                reviewTasks: [...mergedToday, ...restTasks],
+                reviewTasks: [...uniqueToday, ...restTasks],
               };
             });
           }
@@ -506,12 +527,20 @@ export const useStudyStore = create<StudyState & StudyActions>()(
         });
 
         if (forceReshuffle) {
-          set((state) => ({
-            reviewTasks: [
-              ...newTasks,
-              ...state.reviewTasks.filter((t) => t.date !== today),
-            ],
-          }));
+          set((state) => {
+            const restTasks = state.reviewTasks.filter((t) => t.date !== today);
+            const seenKpIds = new Set<string>();
+            const uniqueNewTasks: ReviewTask[] = [];
+            for (const t of newTasks) {
+              if (!seenKpIds.has(t.knowledgePointId)) {
+                seenKpIds.add(t.knowledgePointId);
+                uniqueNewTasks.push(t);
+              }
+            }
+            return {
+              reviewTasks: [...uniqueNewTasks, ...restTasks],
+            };
+          });
         } else {
           set((state) => ({
             reviewTasks: [...newTasks, ...state.reviewTasks],
@@ -627,6 +656,55 @@ export const useStudyStore = create<StudyState & StudyActions>()(
 
       setSelectedSubjectId: (id) => set({ selectedSubjectId: id }),
       setSelectedBatchId: (id) => set({ selectedBatchId: id }),
+
+      enterBatchContext: (batchId) => {
+        const state = get();
+        const batch = state.importBatches.find((b) => b.id === batchId);
+        if (batch) {
+          set({
+            contextBatchId: batchId,
+            selectedBatchId: batchId,
+            selectedSubjectId: batch.subjectId,
+          });
+        }
+      },
+
+      exitBatchContext: () => {
+        set({
+          contextBatchId: null,
+          selectedBatchId: null,
+          selectedSubjectId: null,
+          searchQuery: "",
+          masteryFilter: "all",
+          importantFilter: false,
+        });
+      },
+
+      applyBatchContextFilters: () => {
+        const state = get();
+        if (state.contextBatchId) {
+          const batch = state.importBatches.find(
+            (b) => b.id === state.contextBatchId
+          );
+          if (batch) {
+            set({
+              selectedBatchId: state.contextBatchId,
+              selectedSubjectId: batch.subjectId,
+            });
+          }
+        }
+      },
+
+      clearAllFilters: () => {
+        set({
+          selectedSubjectId: null,
+          selectedBatchId: null,
+          searchQuery: "",
+          masteryFilter: "all",
+          importantFilter: false,
+        });
+      },
+
       setSearchQuery: (query) => set({ searchQuery: query }),
       setMasteryFilter: (filter) => set({ masteryFilter: filter }),
       setImportantFilter: (filter) => set({ importantFilter: filter }),
@@ -708,6 +786,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
           importBatches: [],
           selectedSubjectId: null,
           selectedBatchId: null,
+          contextBatchId: null,
           searchQuery: "",
           masteryFilter: "all",
           importantFilter: false,

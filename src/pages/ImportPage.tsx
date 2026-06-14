@@ -42,7 +42,7 @@ export default function ImportPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importQuestions = useStudyStore((s) => s.importQuestions);
-  const setSelectedBatchId = useStudyStore((s) => s.setSelectedBatchId);
+  const enterBatchContext = useStudyStore((s) => s.enterBatchContext);
 
   const [isDragging, setIsDragging] = useState(false);
   const [step, setStep] = useState(1);
@@ -256,11 +256,12 @@ export default function ImportPage() {
   };
 
   const handleViewMistakes = () => {
-    setSelectedBatchId(importedBatchId);
+    enterBatchContext(importedBatchId);
     navigate("/mistakes");
   };
 
   const handleViewBatchReview = () => {
+    enterBatchContext(importedBatchId);
     navigate(`/batch/${importedBatchId}`);
   };
 

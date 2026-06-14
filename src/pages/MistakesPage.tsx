@@ -18,6 +18,7 @@ import {
   BookX,
   X,
   Upload,
+  History,
 } from "lucide-react";
 import { useStudyStore, getErrorReasonLabel, getQuestionTypeLabel } from "@/store";
 import { subjects } from "@/data/mock";
@@ -41,6 +42,7 @@ export default function MistakesPage() {
     updateScreenshot,
     selectedSubjectId,
     selectedBatchId,
+    contextBatchId,
     searchQuery,
     masteryFilter,
     importantFilter,
@@ -49,6 +51,9 @@ export default function MistakesPage() {
     setSearchQuery,
     setMasteryFilter,
     setImportantFilter,
+    clearAllFilters,
+    applyBatchContextFilters,
+    exitBatchContext,
   } = useStudyStore();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -60,7 +65,9 @@ export default function MistakesPage() {
   const filtered = getFilteredMistakes();
 
   useEffect(() => {
-    if (selectedBatchId) {
+    if (contextBatchId && !selectedBatchId) {
+      applyBatchContextFilters();
+    } else if (selectedBatchId) {
       const batch = importBatches.find((b) => b.id === selectedBatchId);
       if (batch) {
         setSelectedSubjectId(batch.subjectId);
@@ -111,9 +118,14 @@ export default function MistakesPage() {
   const unmasteredCount = totalCount - masteredCount;
 
   const currentBatch = importBatches.find((b) => b.id === selectedBatchId);
+  const contextBatch = importBatches.find((b) => b.id === contextBatchId);
 
   const clearBatchFilter = () => {
-    setSelectedBatchId(null);
+    clearAllFilters();
+  };
+
+  const restoreBatchFilter = () => {
+    applyBatchContextFilters();
   };
 
   return (
@@ -197,13 +209,51 @@ export default function MistakesPage() {
               </div>
             </div>
           </div>
-          <button
-            onClick={clearBatchFilter}
-            className="btn-ghost text-sm flex items-center gap-1"
-          >
-            <X className="w-4 h-4" />
-            清除筛选
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={clearBatchFilter}
+              className="btn-ghost text-sm flex items-center gap-1"
+            >
+              <X className="w-4 h-4" />
+              清除筛选
+            </button>
+            <button
+              onClick={exitBatchContext}
+              className="btn-secondary text-sm flex items-center gap-1"
+            >
+              退出批次视图
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!currentBatch && contextBatch && (
+        <div className="card-base p-4 bg-amber-50/50 border-amber-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <History className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <div className="text-sm text-gray-500">批次上下文：{contextBatch.name}</div>
+              <div className="text-sm text-gray-600">
+                当前已清除筛选，可随时恢复查看这批错题
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={restoreBatchFilter}
+              className="btn-primary text-sm flex items-center gap-1"
+            >
+              恢复批次筛选
+            </button>
+            <button
+              onClick={exitBatchContext}
+              className="btn-ghost text-sm flex items-center gap-1"
+            >
+              退出批次视图
+            </button>
+          </div>
         </div>
       )}
 
