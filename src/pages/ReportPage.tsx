@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   BarChart,
   Bar,
@@ -13,6 +14,8 @@ import {
   Pie,
   Cell,
   Legend,
+  Area,
+  AreaChart,
 } from "recharts";
 import {
   TrendingUp,
@@ -26,16 +29,30 @@ import {
   BrainCircuit,
   ChevronRight,
   Lightbulb,
+  Upload,
+  CheckCircle2,
+  ArrowRight,
+  BookX,
+  BarChart3,
+  History,
+  Check,
+  X as XIcon,
 } from "lucide-react";
 import { useStudyStore } from "@/store";
-import { knowledgePoints, examInfo } from "@/data/mock";
-import type { KnowledgePoint } from "@/types";
+import { knowledgePoints, examInfo, subjects } from "@/data/mock";
+import type { KnowledgePoint, ImportBatch } from "@/types";
 
 const masteryColors = ["#ef4444", "#f59e0b", "#10b981"];
 
 export default function ReportPage() {
-  const { mistakes, reviewTasks, studyRecords, getKnowledgePointMastery } =
-    useStudyStore();
+  const navigate = useNavigate();
+  const {
+    mistakes,
+    reviewTasks,
+    studyRecords,
+    importBatches,
+    getKnowledgePointMastery,
+  } = useStudyStore();
 
   const correctRateData = useMemo(() => {
     return studyRecords.slice(-14).map((r) => ({
@@ -55,6 +72,7 @@ export default function ReportPage() {
           id: kp.id,
           错题数: mastery.mistakeCount,
           正确率: Math.round(mastery.correctRate * 100),
+          level: mastery.level,
         };
       })
       .filter((d) => d.错题数 > 0)
@@ -126,6 +144,15 @@ export default function ReportPage() {
     ).length;
     const totalKp = knowledgePoints.length;
 
+    const totalImported = importBatches.reduce(
+      (acc, b) => acc + b.totalCount,
+      0
+    );
+    const totalMistakesFromImport = importBatches.reduce(
+      (acc, b) => acc + b.mistakeCount,
+      0
+    );
+
     return {
       totalQuestions,
       avgCorrectRate,
@@ -135,8 +162,82 @@ export default function ReportPage() {
       totalReviewMinutes,
       masteredKp,
       totalKp,
+      totalImported,
+      totalMistakesFromImport,
     };
-  }, [studyRecords, reviewTasks, getKnowledgePointMastery]);
+  }, [studyRecords, reviewTasks, getKnowledgePointMastery, importBatches]);
+
+  const importTimeline = useMemo(() => {
+    const sortedBatches = [...importBatches].sort(
+      (a, b) => (a.createdAt < b.createdAt ? 1 : -1)
+    );
+    return sortedBatches.map((b) => {
+      const subject = subjects.find((s) => s.id === b.subjectId)?.name || "";
+      const coveredTaskCount = reviewTasks.filter(
+        (t) =>
+          t.sourceBatchId === b.id ||
+          (t.date >= b.createdAt &&
+            mistakes
+              .filter((m) => m.importBatchId === b.id)
+              .some((m) => m.knowledgePoint.id === t.knowledgePointId))
+      ).length;
+      const batchMistakes = mistakes.filter((m) => m.importBatchId === b.id);
+      const masteredAfterImport = batchMistakes.filter((m) => m.mastered)
+        .length;
+      return {
+        ...b,
+        subject,
+        coveredTasks: coveredTaskCount,
+        masteredCount: masteredAfterImport,
+        masteredRate:
+          batchMistakes.length > 0
+            ? Math.round((masteredAfterImport / batchMistakes.length) * 100)
+            : 0,
+      };
+    });
+  }, [importBatches, mistakes, reviewTasks]);
+
+  const masteryTrendData = useMemo(() => {
+    const sortedBatches = [...importBatches].sort((a, b) =>
+      a.createdAt < b.createdAt ? -1 : 1
+    );
+    let cumulatedGood = 0;
+    let cumulatedMedium = 0;
+    let cumulatedWeak = 0;
+
+    const kpLevels: Record<string, "good" | "medium" | "weak"> = {};
+    const baseLevels = knowledgePoints.map((kp) => {
+      const mastery = getKnowledgePointMastery(kp.id);
+      return { id: kp.id, level: mastery.level };
+    });
+    baseLevels.forEach((k) => {
+      kpLevels[k.id] = k.level;
+    });
+
+    return sortedBatches.map((b, idx) => {
+      const batchMistakes = mistakes.filter((m) => m.importBatchId === b.id);
+      batchMistakes.forEach((m) => {
+        const mastery = getKnowledgePointMastery(m.knowledgePoint.id);
+        kpLevels[m.knowledgePoint.id] = mastery.level;
+      });
+
+      let good = 0;
+      let medium = 0;
+      let weak = 0;
+      Object.values(kpLevels).forEach((lvl) => {
+        if (lvl === "good") good++;
+        else if (lvl === "medium") medium++;
+        else weak++;
+      });
+
+      return {
+        batch: `第${idx + 1}次导入`,
+        掌握良好: good,
+        掌握一般: medium,
+        掌握薄弱: weak,
+      };
+    });
+  }, [importBatches, mistakes, getKnowledgePointMastery]);
 
   const suggestions = useMemo(() => {
     const tips: string[] = [];
@@ -158,8 +259,16 @@ export default function ReportPage() {
     if (mistakes.filter((m) => m.errorReason === "concept").length > 2) {
       tips.push("概念类错误较多，建议回归教材，夯实基础知识");
     }
+    if (importBatches.length > 0) {
+      const recentBatch = importTimeline[0];
+      if (recentBatch && recentBatch.mistakeCount > 0 && recentBatch.masteredRate < 30) {
+        tips.push(
+          `最近导入的「${recentBatch.name}」错题掌握度仅${recentBatch.masteredRate}%，建议安排复习`
+        );
+      }
+    }
     return tips.slice(0, 4);
-  }, [weakKpData, stats, mistakes]);
+  }, [weakKpData, stats, mistakes, importBatches, importTimeline]);
 
   return (
     <div className="space-y-6">
@@ -384,9 +493,21 @@ export default function ReportPage() {
                 <Bar
                   dataKey="错题数"
                   radius={[0, 8, 8, 0]}
-                  fill="#ef4444"
                   barSize={20}
-                />
+                >
+                  {weakKpData.map((entry, index) => (
+                    <Cell
+                      key={`weak-${index}`}
+                      fill={
+                        entry.level === "weak"
+                          ? "#ef4444"
+                          : entry.level === "medium"
+                          ? "#f59e0b"
+                          : "#10b981"
+                      }
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -438,6 +559,154 @@ export default function ReportPage() {
           )}
         </div>
       </div>
+
+      {importTimeline.length > 0 && (
+        <div className="grid grid-cols-3 gap-6">
+          <div className="col-span-2 card-base p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-primary-600" />
+                <h3 className="font-bold text-gray-800">导入时间线 & 复习覆盖</h3>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-400">
+                <span className="flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5 text-green-500" /> 复习覆盖
+                </span>
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-teal-500" /> 已掌握
+                </span>
+              </div>
+            </div>
+            <div className="space-y-3 max-h-[420px] overflow-y-auto">
+              {importTimeline.map((b) => (
+                <div
+                  key={b.id}
+                  className="p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer group"
+                  onClick={() => navigate(`/batch/${b.id}`)}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <Upload className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-800 truncate">
+                          {b.name}
+                        </span>
+                        <span className="tag bg-blue-50 text-blue-700 text-xs">
+                          {b.subject}
+                        </span>
+                        <span className="text-xs text-gray-400 ml-auto">
+                          {b.createdAt}
+                        </span>
+                        <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary-500 transition-colors" />
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                        <span>共 {b.totalCount} 题</span>
+                        <span className="text-red-500">
+                          错题 {b.mistakeCount}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          复习覆盖 {b.coveredTasks}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                          掌握度 {b.masteredRate}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="ml-13 pl-13">
+                    <div className="h-2 rounded-full bg-gray-200 overflow-hidden flex">
+                      <div
+                        className="h-full bg-green-500"
+                        style={{ width: `${b.masteredRate}%` }}
+                      />
+                      <div
+                        className="h-full bg-blue-400"
+                        style={{
+                          width: `${Math.min(100 - b.masteredRate, b.coveredTasks * 10)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card-base p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="w-5 h-5 text-primary-600" />
+              <h3 className="font-bold text-gray-800">掌握度变化</h3>
+            </div>
+            {masteryTrendData.length === 0 ? (
+              <div className="py-16 text-center">
+                <History className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                <p className="text-sm text-gray-400">暂无导入记录</p>
+              </div>
+            ) : (
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={masteryTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis
+                      dataKey="batch"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10, fill: "#94a3b8" }}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10, fill: "#94a3b8" }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "white",
+                        border: "none",
+                        borderRadius: "12px",
+                        boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: "11px" }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="掌握良好"
+                      stackId="1"
+                      stroke="#10b981"
+                      fill="#10b981"
+                      fillOpacity={0.4}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="掌握一般"
+                      stackId="1"
+                      stroke="#f59e0b"
+                      fill="#f59e0b"
+                      fillOpacity={0.4}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="掌握薄弱"
+                      stackId="1"
+                      stroke="#ef4444"
+                      fill="#ef4444"
+                      fillOpacity={0.4}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

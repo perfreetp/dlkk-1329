@@ -260,6 +260,10 @@ export default function ImportPage() {
     navigate("/mistakes");
   };
 
+  const handleViewBatchReview = () => {
+    navigate(`/batch/${importedBatchId}`);
+  };
+
   const successCount = importStats.correct;
   const failCount = importStats.wrong;
 
@@ -294,8 +298,8 @@ export default function ImportPage() {
               <div className="text-xs text-gray-500">答错</div>
             </div>
           </div>
-          <div className="flex gap-3 justify-center">
-            <button className="btn-secondary" onClick={() => {
+          <div className="flex flex-col sm:flex-row gap-3 justify-center w-full">
+            <button className="btn-ghost" onClick={() => {
               setStep(1);
               setFileName("");
               setImportData([]);
@@ -304,7 +308,12 @@ export default function ImportPage() {
             }}>
               继续导入
             </button>
-            <button className="btn-primary" onClick={handleViewMistakes}>查看错题本</button>
+            <button className="btn-secondary" onClick={handleViewBatchReview}>
+              批次回看
+            </button>
+            <button className="btn-primary" onClick={handleViewMistakes}>
+              查看错题本
+            </button>
           </div>
         </div>
       </div>

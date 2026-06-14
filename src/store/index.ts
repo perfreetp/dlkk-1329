@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Mistake, ReviewTask, StudyRecord, ErrorReason, TaskStatus, ImportBatch, Question, Subject, Chapter, KnowledgePoint } from "@/types";
-import { mistakes as initialMistakes, reviewTasks as initialTasks, studyRecords as initialRecords, subjects, chapters, knowledgePoints, questions } from "@/data/mock";
+import type { Mistake, ReviewTask, StudyRecord, ErrorReason, TaskStatus, ImportBatch, Question, Subject, Chapter, KnowledgePoint, QuestionType } from "@/types";
+import { mistakes as initialMistakes, reviewTasks as initialTasks, studyRecords as initialRecords, subjects, chapters, knowledgePoints, questions, examInfo } from "@/data/mock";
 
 interface StudyState {
   mistakes: Mistake[];
@@ -29,6 +29,18 @@ interface ImportQuestionData {
   errorReason?: ErrorReason;
 }
 
+interface BatchStats {
+  batch: ImportBatch;
+  mistakes: Mistake[];
+  totalCount: number;
+  mistakeCount: number;
+  correctCount: number;
+  typeDistribution: { type: QuestionType; label: string; count: number }[];
+  reasonDistribution: { reason: ErrorReason; label: string; count: number }[];
+  kpDistribution: { id: string; name: string; count: number }[];
+  newWeakPoints: { id: string; name: string; count: number; level: string }[];
+}
+
 interface StudyActions {
   toggleMastered: (id: string) => void;
   toggleImportant: (id: string) => void;
@@ -39,7 +51,10 @@ interface StudyActions {
   importQuestions: (data: ImportQuestionData[], batchName: string, subjectId: string, chapterId: string) => string;
   updateTaskStatus: (id: string, status: TaskStatus) => void;
   delayTask: (id: string) => void;
-  generateDailyTasks: () => void;
+  generateDailyTasks: (forceReshuffle?: boolean) => void;
+  rescheduleTodayTasks: () => void;
+  getBatchStats: (batchId: string) => BatchStats | null;
+  getMistakesByBatch: (batchId: string) => Mistake[];
   setSelectedSubjectId: (id: string | null) => void;
   setSelectedBatchId: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
@@ -47,6 +62,8 @@ interface StudyActions {
   setImportantFilter: (filter: boolean) => void;
   getKnowledgePointMastery: (kpId: string) => { correctRate: number; mistakeCount: number; level: "good" | "medium" | "weak" };
   getFilteredMistakes: () => Mistake[];
+  getDaysUntilExam: () => number;
+  getTaskSourceLabel: (task: ReviewTask) => string;
   resetToMock: () => void;
 }
 
@@ -81,11 +98,38 @@ const determineErrorReason = (): ErrorReason => {
   return reasons[Math.floor(Math.random() * reasons.length)];
 };
 
+const daysBetween = (a: string, b: string) => {
+  const d1 = new Date(a);
+  const d2 = new Date(b);
+  return Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const addDays = (dateStr: string, days: number) => {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+};
+
+const computeDaysUntilExam = (today: string) => {
+  try {
+    const exam = new Date(examInfo.examDate);
+    const t = new Date(today);
+    return Math.max(0, Math.round((exam.getTime() - t.getTime()) / (1000 * 60 * 60 * 24)));
+  } catch {
+    return 60;
+  }
+};
+
 export const useStudyStore = create<StudyState & StudyActions>()(
   persist(
     (set, get) => ({
       mistakes: initialMistakes,
-      reviewTasks: initialTasks,
+      reviewTasks: initialTasks.map((t) => ({
+        ...t,
+        priorityLabel: (t.priority >= 3 ? "high" : t.priority >= 2 ? "medium" : "low") as "high" | "medium" | "low",
+        source: "frequency" as "batch" | "frequency" | "delayed",
+        weakLevel: "medium" as "weak" | "medium" | "good",
+      })),
       studyRecords: initialRecords,
       importBatches: [],
       selectedSubjectId: null,
@@ -97,7 +141,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
       toggleMastered: (id) =>
         set((state) => ({
           mistakes: state.mistakes.map((m) =>
-            m.id === id ? { ...m, mastered: !m.mastered } : m
+            m.id === id ? { ...m, mastered: !m.mastered, reviewedCount: m.reviewedCount + 1 } : m
           ),
         })),
 
@@ -137,9 +181,11 @@ export const useStudyStore = create<StudyState & StudyActions>()(
         const batchId = `batch-${generateId()}`;
         const subject = subjects.find((s) => s.id === subjectId) || subjects[0];
         const chapter = chapters.find((c) => c.id === chapterId) || chapters[0];
+        const today = new Date().toISOString().split("T")[0];
+        const daysUntilExam = computeDaysUntilExam(today);
 
         const newMistakes: Mistake[] = [];
-        const today = new Date().toISOString().split("T")[0];
+        const newMistakeKpIds = new Set<string>();
 
         data.forEach((item) => {
           if (item.isCorrect) return;
@@ -149,6 +195,7 @@ export const useStudyStore = create<StudyState & StudyActions>()(
             item.knowledgePointName,
             chapterId
           );
+          newMistakeKpIds.add(kp.id);
 
           const questionId = item.questionId || `q-${generateId()}`;
           const question: Question = {
@@ -197,7 +244,63 @@ export const useStudyStore = create<StudyState & StudyActions>()(
           selectedBatchId: batchId,
         }));
 
-        get().generateDailyTasks();
+        if (newMistakes.length > 0) {
+          const currentState = get();
+          const existingToday = currentState.reviewTasks.filter((t) => t.date === today);
+          const todayExistingKps = new Set(existingToday.map((t) => t.knowledgePointId));
+
+          const kpMistakeMap = new Map<string, Mistake[]>();
+          newMistakes.forEach((m) => {
+            if (!kpMistakeMap.has(m.knowledgePoint.id)) {
+              kpMistakeMap.set(m.knowledgePoint.id, []);
+            }
+            kpMistakeMap.get(m.knowledgePoint.id)!.push(m);
+          });
+
+          const newTasks: ReviewTask[] = [];
+          kpMistakeMap.forEach((mistakes, kpId) => {
+            if (todayExistingKps.has(kpId)) return;
+
+            const mastery = get().getKnowledgePointMastery(kpId);
+            const weakLevel = mastery.level;
+            const mistakeCount = mistakes.length;
+            const avgReviewed = 0;
+
+            let basePriority = mistakeCount * 2;
+            if (weakLevel === "weak") basePriority += 4;
+            else if (weakLevel === "medium") basePriority += 2;
+            if (daysUntilExam <= 14) basePriority += 3;
+            else if (daysUntilExam <= 30) basePriority += 2;
+            if (avgReviewed === 0) basePriority += 2;
+
+            const priority = Math.min(3, Math.max(1, Math.round(basePriority / 4)));
+
+            newTasks.push({
+              id: `t-${generateId()}`,
+              knowledgePointId: kpId,
+              knowledgePointName: mistakes[0].knowledgePoint.name,
+              subjectName: subject.name,
+              date: today,
+              status: "pending",
+              priority,
+              priorityLabel: priority >= 3 ? "high" : priority >= 2 ? "medium" : "low",
+              estimatedMinutes: mistakeCount * 8 + 10,
+              mistakeCount,
+              source: "batch",
+              sourceBatchName: batchName,
+              sourceBatchId: batchId,
+              weakLevel,
+              lastReviewedDate: undefined,
+              daysUntilExam,
+            });
+          });
+
+          if (newTasks.length > 0) {
+            set((state) => ({
+              reviewTasks: [...newTasks, ...state.reviewTasks],
+            }));
+          }
+        }
 
         return batchId;
       },
@@ -219,18 +322,24 @@ export const useStudyStore = create<StudyState & StudyActions>()(
         set((state) => ({
           reviewTasks: state.reviewTasks.map((t) =>
             t.id === id
-              ? { ...t, date: tomorrow.toISOString().split("T")[0], status: "delayed" as TaskStatus }
+              ? {
+                  ...t,
+                  date: tomorrow.toISOString().split("T")[0],
+                  status: "delayed" as TaskStatus,
+                  source: "delayed" as "batch" | "frequency" | "delayed",
+                }
               : t
           ),
         }));
       },
 
-      generateDailyTasks: () => {
+      generateDailyTasks: (forceReshuffle = false) => {
         const state = get();
         const today = new Date().toISOString().split("T")[0];
+        const daysUntilExam = computeDaysUntilExam(today);
 
         const existingTodayTasks = state.reviewTasks.filter((t) => t.date === today);
-        if (existingTodayTasks.length > 0) return;
+        if (existingTodayTasks.length > 0 && !forceReshuffle) return;
 
         const unmasteredMistakes = state.mistakes.filter((m) => !m.mastered);
 
@@ -249,47 +358,145 @@ export const useStudyStore = create<StudyState & StudyActions>()(
           subjectName: string;
           mistakeCount: number;
           avgReviewedCount: number;
+          masteryLevel: "good" | "medium" | "weak";
+          score: number;
         }[] = [];
 
         kpMistakeMap.forEach((mistakes, kpId) => {
           const first = mistakes[0];
           const avgReviewed = mistakes.reduce((sum, m) => sum + m.reviewedCount, 0) / mistakes.length;
+          const mastery = get().getKnowledgePointMastery(kpId);
+
+          let score = 0;
+          score += mistakes.length * 3;
+          if (mastery.level === "weak") score += 8;
+          else if (mastery.level === "medium") score += 4;
+          if (daysUntilExam <= 14) score += 5;
+          else if (daysUntilExam <= 30) score += 3;
+          else if (daysUntilExam <= 60) score += 1;
+          score += Math.max(0, 3 - avgReviewed);
+
           kpData.push({
             id: kpId,
             name: first.knowledgePoint.name,
             subjectName: first.subject.name,
             mistakeCount: mistakes.length,
             avgReviewedCount: avgReviewed,
+            masteryLevel: mastery.level,
+            score,
           });
         });
 
-        kpData.sort((a, b) => {
-          const scoreA = a.mistakeCount * 2 + (3 - a.avgReviewedCount);
-          const scoreB = b.mistakeCount * 2 + (3 - b.avgReviewedCount);
-          return scoreB - scoreA;
-        });
+        kpData.sort((a, b) => b.score - a.score);
 
         const tasksPerDay = Math.min(5, kpData.length);
         const selectedKPs = kpData.slice(0, tasksPerDay);
 
+        const maxScore = selectedKPs.length > 0 ? selectedKPs[0].score : 1;
+
         const newTasks: ReviewTask[] = selectedKPs.map((kp, index) => {
-          const priority = index === 0 ? 3 : index <= 2 ? 2 : 1;
+          const normalized = kp.score / maxScore;
+          let priority: 1 | 2 | 3 = 1;
+          if (normalized >= 0.75) priority = 3;
+          else if (normalized >= 0.4) priority = 2;
+
           return {
             id: `t-${generateId()}`,
             knowledgePointId: kp.id,
             knowledgePointName: kp.name,
             subjectName: kp.subjectName,
             date: today,
-            status: "pending" as TaskStatus,
+            status: "pending",
             priority,
+            priorityLabel: priority >= 3 ? "high" : priority >= 2 ? "medium" : "low",
             estimatedMinutes: kp.mistakeCount * 8 + 10,
             mistakeCount: kp.mistakeCount,
+            source: "frequency",
+            weakLevel: kp.masteryLevel,
+            lastReviewedDate: kp.avgReviewedCount > 0 ? today : undefined,
+            daysUntilExam,
           };
         });
 
-        set((state) => ({
-          reviewTasks: [...newTasks, ...state.reviewTasks],
+        if (forceReshuffle) {
+          set((state) => ({
+            reviewTasks: [
+              ...newTasks,
+              ...state.reviewTasks.filter((t) => t.date !== today),
+            ],
+          }));
+        } else {
+          set((state) => ({
+            reviewTasks: [...newTasks, ...state.reviewTasks],
+          }));
+        }
+      },
+
+      rescheduleTodayTasks: () => {
+        get().generateDailyTasks(true);
+      },
+
+      getBatchStats: (batchId) => {
+        const state = get();
+        const batch = state.importBatches.find((b) => b.id === batchId);
+        if (!batch) return null;
+
+        const mistakes = state.mistakes.filter((m) => m.importBatchId === batchId);
+
+        const typeMap = new Map<string, number>();
+        mistakes.forEach((m) => {
+          const t = m.question.type;
+          typeMap.set(t, (typeMap.get(t) || 0) + 1);
+        });
+        const typeDistribution = Array.from(typeMap.entries()).map(([type, count]) => ({
+          type: type as QuestionType,
+          label: getQuestionTypeLabel(type),
+          count,
         }));
+
+        const reasonMap = new Map<string, number>();
+        mistakes.forEach((m) => {
+          const r = m.errorReason;
+          reasonMap.set(r, (reasonMap.get(r) || 0) + 1);
+        });
+        const reasonDistribution = Array.from(reasonMap.entries()).map(([reason, count]) => ({
+          reason: reason as ErrorReason,
+          label: getErrorReasonLabel(reason as ErrorReason),
+          count,
+        }));
+
+        const kpMap = new Map<string, { id: string; name: string; count: number }>();
+        mistakes.forEach((m) => {
+          const kp = m.knowledgePoint;
+          if (!kpMap.has(kp.id)) {
+            kpMap.set(kp.id, { id: kp.id, name: kp.name, count: 0 });
+          }
+          kpMap.get(kp.id)!.count++;
+        });
+        const kpDistribution = Array.from(kpMap.values()).sort((a, b) => b.count - a.count);
+
+        const newWeakPoints = kpDistribution
+          .map((k) => {
+            const mastery = get().getKnowledgePointMastery(k.id);
+            return { ...k, level: mastery.level };
+          })
+          .filter((k) => k.level === "weak" || k.level === "medium");
+
+        return {
+          batch,
+          mistakes,
+          totalCount: batch.totalCount,
+          mistakeCount: mistakes.length,
+          correctCount: batch.totalCount - mistakes.length,
+          typeDistribution,
+          reasonDistribution,
+          kpDistribution,
+          newWeakPoints,
+        };
+      },
+
+      getMistakesByBatch: (batchId) => {
+        return get().mistakes.filter((m) => m.importBatchId === batchId);
       },
 
       setSelectedSubjectId: (id) => set({ selectedSubjectId: id }),
@@ -339,10 +546,26 @@ export const useStudyStore = create<StudyState & StudyActions>()(
         return result;
       },
 
+      getDaysUntilExam: () => {
+        return computeDaysUntilExam(new Date().toISOString().split("T")[0]);
+      },
+
+      getTaskSourceLabel: (task) => {
+        if (task.source === "batch") return `来自导入「${task.sourceBatchName || "新批次"}」`;
+        if (task.source === "delayed") return "昨日延期任务";
+        if (task.source === "frequency") return "高频错题自动生成";
+        return "系统推荐";
+      },
+
       resetToMock: () => {
         set({
           mistakes: initialMistakes,
-          reviewTasks: initialTasks,
+          reviewTasks: initialTasks.map((t) => ({
+            ...t,
+            priorityLabel: (t.priority >= 3 ? "high" : t.priority >= 2 ? "medium" : "low") as any,
+            source: "frequency" as any,
+            weakLevel: "medium" as any,
+          })),
           studyRecords: initialRecords,
           importBatches: [],
           selectedSubjectId: null,

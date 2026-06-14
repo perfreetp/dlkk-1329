@@ -73,8 +73,15 @@ export interface ReviewTask {
   date: string;
   status: TaskStatus;
   priority: number;
+  priorityLabel: "high" | "medium" | "low";
   estimatedMinutes: number;
   mistakeCount: number;
+  source: "batch" | "frequency" | "delayed";
+  sourceBatchName?: string;
+  sourceBatchId?: string;
+  weakLevel: "weak" | "medium" | "good";
+  lastReviewedDate?: string;
+  daysUntilExam?: number;
 }
 
 export interface StudyRecord {

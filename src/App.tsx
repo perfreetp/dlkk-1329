@@ -6,6 +6,7 @@ import GraphPage from "@/pages/GraphPage";
 import KnowledgeDetailPage from "@/pages/KnowledgeDetailPage";
 import PlanPage from "@/pages/PlanPage";
 import ReportPage from "@/pages/ReportPage";
+import BatchReviewPage from "@/pages/BatchReviewPage";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route index element={<Navigate to="/import" replace />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="mistakes" element={<MistakesPage />} />
+          <Route path="batch/:batchId" element={<BatchReviewPage />} />
           <Route path="graph" element={<GraphPage />} />
           <Route path="graph/:id" element={<KnowledgeDetailPage />} />
           <Route path="plan" element={<PlanPage />} />
