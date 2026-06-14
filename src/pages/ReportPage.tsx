@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BarChart,
@@ -37,6 +37,9 @@ import {
   History,
   Check,
   X as XIcon,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from "lucide-react";
 import { useStudyStore } from "@/store";
 import { knowledgePoints, examInfo, subjects } from "@/data/mock";
@@ -184,6 +187,7 @@ export default function ReportPage() {
       const batchMistakes = mistakes.filter((m) => m.importBatchId === b.id);
       const masteredAfterImport = batchMistakes.filter((m) => m.mastered)
         .length;
+      const batchStats = getBatchStats(b.id);
       return {
         ...b,
         subject,
@@ -193,9 +197,13 @@ export default function ReportPage() {
           batchMistakes.length > 0
             ? Math.round((masteredAfterImport / batchMistakes.length) * 100)
             : 0,
+        weakPoints: batchStats?.newWeakPoints || [],
+        masteryTracking: batchStats?.masteryTracking || [],
       };
     });
-  }, [importBatches, mistakes, reviewTasks]);
+  }, [importBatches, mistakes, reviewTasks, getBatchStats]);
+
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
 
   const masteryTrendData = useMemo(() => {
     const sortedBatches = [...importBatches].sort((a, b) =>
@@ -577,62 +585,201 @@ export default function ReportPage() {
                 </span>
               </div>
             </div>
-            <div className="space-y-3 max-h-[420px] overflow-y-auto">
-              {importTimeline.map((b) => (
-                <div
-                  key={b.id}
-                  className="p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer group"
-                  onClick={() => navigate(`/batch/${b.id}`)}
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <Upload className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-800 truncate">
-                          {b.name}
-                        </span>
-                        <span className="tag bg-blue-50 text-blue-700 text-xs">
-                          {b.subject}
-                        </span>
-                        <span className="text-xs text-gray-400 ml-auto">
-                          {b.createdAt}
-                        </span>
-                        <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-primary-500 transition-colors" />
+            <div className="space-y-3 max-h-[520px] overflow-y-auto">
+              {importTimeline.map((b) => {
+                const isExpanded = expandedBatchId === b.id;
+                return (
+                  <div
+                    key={b.id}
+                    className="rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors overflow-hidden"
+                  >
+                    <div
+                      className="p-4 cursor-pointer flex items-start gap-3"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedBatchId(isExpanded ? null : b.id);
+                      }}
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <Upload className="w-5 h-5 text-blue-600" />
                       </div>
-                      <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                        <span>共 {b.totalCount} 题</span>
-                        <span className="text-red-500">
-                          错题 {b.mistakeCount}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          复习覆盖 {b.coveredTasks}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                          掌握度 {b.masteredRate}%
-                        </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-gray-800 truncate">
+                            {b.name}
+                          </span>
+                          <span className="tag bg-blue-50 text-blue-700 text-xs">
+                            {b.subject}
+                          </span>
+                          <span className="text-xs text-gray-400 ml-auto">
+                            {b.createdAt}
+                          </span>
+                          <button
+                            className="w-7 h-7 rounded-lg hover:bg-white flex items-center justify-center text-gray-400 hover:text-primary-600 transition-colors ml-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/batch/${b.id}`);
+                            }}
+                            title="查看批次详情"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                          {isExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-gray-400" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-gray-400" />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500 flex-wrap">
+                          <span>共 {b.totalCount} 题</span>
+                          <span className="text-red-500">错题 {b.mistakeCount}</span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            复习覆盖 {b.coveredTasks}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            掌握度 {b.masteredRate}%
+                          </span>
+                        </div>
+                        <div className="ml-0 mt-2">
+                          <div className="h-2 rounded-full bg-gray-200 overflow-hidden flex">
+                            <div
+                              className="h-full bg-green-500"
+                              style={{ width: `${b.masteredRate}%` }}
+                            />
+                            <div
+                              className="h-full bg-blue-400"
+                              style={{
+                                width: `${Math.min(
+                                  100 - b.masteredRate,
+                                  b.coveredTasks * 10
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
+
+                    {isExpanded && (
+                      <div className="px-4 pb-4 border-t border-gray-200/50 pt-3 space-y-3 animate-slide-up">
+                        <div>
+                          <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                            本批次薄弱知识点（点击去详情查看掌握度变化）
+                          </div>
+                          {b.weakPoints.length === 0 ? (
+                            <div className="text-xs text-gray-400 py-2 text-center">
+                              本批次暂无薄弱知识点
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              {b.weakPoints.map((kp) => {
+                                const tracking = b.masteryTracking.find(
+                                  (t) => t.id === kp.id
+                                );
+                                const levelColor =
+                                  kp.level === "weak"
+                                    ? "text-red-600 bg-red-50 border-red-100"
+                                    : kp.level === "medium"
+                                    ? "text-amber-600 bg-amber-50 border-amber-100"
+                                    : "text-green-600 bg-green-50 border-green-100";
+                                return (
+                                  <div
+                                    key={kp.id}
+                                    className="p-2.5 rounded-lg bg-white border border-gray-100 hover:border-primary-200 hover:shadow-sm transition-all cursor-pointer"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigate(`/graph/${kp.id}`);
+                                    }}
+                                  >
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-sm font-medium text-gray-800 truncate flex-1">
+                                        {kp.name}
+                                      </span>
+                                      <span className={`tag text-[10px] ${levelColor} ml-2`}>
+                                        {kp.level === "weak"
+                                          ? "薄弱"
+                                          : kp.level === "medium"
+                                          ? "一般"
+                                          : "良好"}
+                                      </span>
+                                    </div>
+                                    {tracking && (
+                                      <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                        <span>
+                                          导入后: {tracking.afterImportRate}%
+                                        </span>
+                                        <ArrowRight className="w-3 h-3" />
+                                        <span
+                                          className={
+                                            tracking.currentRate >=
+                                            tracking.afterImportRate
+                                              ? "text-green-600 font-medium"
+                                              : "text-red-500 font-medium"
+                                          }
+                                        >
+                                          当前: {tracking.currentRate}%
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                      <div className="flex-1 h-1 rounded-full bg-gray-100 overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full ${
+                                            kp.level === "weak"
+                                              ? "bg-red-500"
+                                              : kp.level === "medium"
+                                              ? "bg-amber-500"
+                                              : "bg-green-500"
+                                          }`}
+                                          style={{
+                                            width: `${
+                                              tracking
+                                                ? tracking.currentRate
+                                                : (kp.count /
+                                                    (b.mistakeCount || 1)) *
+                                                  100
+                                            }%`,
+                                          }}
+                                        />
+                                      </div>
+                                      <span className="text-[10px] text-gray-400 w-6 text-right">
+                                        {kp.count}题
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            className="btn-secondary text-xs py-1.5 px-3 flex-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/batch/${b.id}`);
+                            }}
+                          >
+                            批次回看详情
+                          </button>
+                          <button
+                            className="btn-primary text-xs py-1.5 px-3 flex-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/plan`);
+                            }}
+                          >
+                            去安排复习
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="ml-13 pl-13">
-                    <div className="h-2 rounded-full bg-gray-200 overflow-hidden flex">
-                      <div
-                        className="h-full bg-green-500"
-                        style={{ width: `${b.masteredRate}%` }}
-                      />
-                      <div
-                        className="h-full bg-blue-400"
-                        style={{
-                          width: `${Math.min(100 - b.masteredRate, b.coveredTasks * 10)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

@@ -45,6 +45,17 @@ export interface ImportBatch {
   chapterId: string;
 }
 
+export interface KpMasterySnapshot {
+  id: string;
+  name: string;
+  afterImport: "weak" | "medium" | "good";
+  afterImportRate: number;
+  current: "weak" | "medium" | "good";
+  currentRate: number;
+  totalMistakes: number;
+  masteredCount: number;
+}
+
 export interface Mistake {
   id: string;
   questionId: string;

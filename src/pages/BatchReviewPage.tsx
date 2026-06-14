@@ -21,6 +21,9 @@ import {
   Trash2,
   X,
   Upload,
+  TrendingUp,
+  TrendingUp as TrendingUpIcon,
+  ArrowRight,
 } from "lucide-react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
 import { useStudyStore, getErrorReasonLabel, getQuestionTypeLabel } from "@/store";
@@ -344,52 +347,90 @@ export default function BatchReviewPage() {
 
         <div className="card-base p-6">
           <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-5 h-5 text-primary-600" />
-            <h3 className="font-bold text-gray-800">薄弱知识点</h3>
+            <TrendingUp className="w-5 h-5 text-primary-600" />
+            <h3 className="font-bold text-gray-800">知识点掌握度追踪</h3>
+            <span className="tag bg-gray-50 text-gray-500 text-[10px] ml-auto">
+              导入后 → 当前
+            </span>
           </div>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {stats.newWeakPoints.length === 0 ? (
+          <div className="space-y-2.5 max-h-64 overflow-y-auto">
+            {stats.masteryTracking.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-sm">
-                暂无薄弱知识点
+                暂无知识点数据
               </div>
             ) : (
-              stats.newWeakPoints.map((kp) => {
-                const rate = stats.mistakeCount > 0 ? (kp.count / stats.mistakeCount) * 100 : 0;
-                const levelColor =
-                  kp.level === "weak"
-                    ? "text-red-600 bg-red-50"
-                    : kp.level === "medium"
-                    ? "text-amber-600 bg-amber-50"
-                    : "text-green-600 bg-green-50";
+              stats.masteryTracking.map((kp) => {
+                const improved =
+                  kp.currentRate >= kp.afterImportRate;
+                const currentColor =
+                  kp.current === "weak"
+                    ? "bg-red-500"
+                    : kp.current === "medium"
+                    ? "bg-amber-500"
+                    : "bg-green-500";
+                const currentTextColor =
+                  kp.current === "weak"
+                    ? "text-red-600"
+                    : kp.current === "medium"
+                    ? "text-amber-600"
+                    : "text-green-600";
                 return (
-                  <div key={kp.id} className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div
+                    key={kp.id}
+                    className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/graph/${kp.id}`)}
+                  >
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm font-medium text-gray-800 truncate">
+                      <span className="text-sm font-medium text-gray-800 truncate pr-2">
                         {kp.name}
                       </span>
-                      <span className={`tag text-xs ${levelColor}`}>
-                        {kp.level === "weak"
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-[11px] text-gray-400">
+                          {kp.afterImportRate}%
+                        </span>
+                        <ArrowRight className="w-3 h-3 text-gray-300" />
+                        <span
+                          className={`text-[11px] font-bold ${currentTextColor}`}
+                        >
+                          {kp.currentRate}%
+                        </span>
+                        {improved && kp.currentRate !== kp.afterImportRate && (
+                          <TrendingUpIcon className="w-3 h-3 text-green-500 ml-0.5" />
+                        )}
+                        {!improved && kp.currentRate !== kp.afterImportRate && (
+                          <TrendingDown className="w-3 h-3 text-red-500 ml-0.5" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden flex">
+                        <div
+                          className="h-full bg-gray-400"
+                          style={{
+                            width: `${Math.min(100, kp.afterImportRate)}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                          className={`h-full ${currentColor}`}
+                          style={{
+                            width: `${Math.min(100, kp.currentRate)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5 text-[10px] text-gray-400">
+                      <span>
+                        掌握
+                        {kp.current === "weak"
                           ? "薄弱"
-                          : kp.level === "medium"
+                          : kp.current === "medium"
                           ? "一般"
                           : "良好"}
                       </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            kp.level === "weak"
-                              ? "bg-red-500"
-                              : kp.level === "medium"
-                              ? "bg-amber-500"
-                              : "bg-green-500"
-                          }`}
-                          style={{ width: `${Math.min(100, rate)}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500 w-8 text-right">
-                        {kp.count}题
+                      <span>
+                        {kp.masteredCount}/{kp.totalMistakes} 已掌握
                       </span>
                     </div>
                   </div>
